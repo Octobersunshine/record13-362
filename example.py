@@ -147,3 +147,67 @@ print(final_result['年龄_discretized'].value_counts().sort_index())
 print()
 print("年龄分布百分比：")
 print((final_result['年龄_discretized'].value_counts(normalize=True).sort_index() * 100).round(2).astype(str) + '%')
+print()
+
+print("=" * 60)
+print("示例8：左闭右开区间 (right=False) - 年龄按 [低, 中, 高) 归属")
+print("=" * 60)
+discretizer8 = DataDiscretizer()
+result8 = discretizer8.fit_transform(
+    data,
+    columns=['年龄'],
+    method='equal_width',
+    n_bins=3,
+    right=False,
+    include_lowest=True,
+    labels={'年龄': ['青年', '中年', '老年']}
+)
+print("右闭左开 vs 左闭右开 对比：")
+print(result8[['年龄', '年龄_discretized']].head(10))
+print()
+print("分箱详情（right=False，左闭右开）：")
+print(discretizer8.get_bin_info('年龄'))
+print()
+
+print("=" * 60)
+print("示例9：边界值归属验证 - 精确测试区间开闭")
+print("=" * 60)
+test_data = pd.DataFrame({'score': [0, 60, 60.0, 80, 80.0, 100]})
+print(f"测试数据: {test_data['score'].tolist()}")
+print()
+
+print("--- right=True（默认：左开右闭 (a, b]）---")
+disc_right = DataDiscretizer()
+res_right = disc_right.fit_transform(
+    test_data,
+    columns=['score'],
+    method='custom',
+    custom_bins={'score': [0, 60, 80, 100]},
+    labels={'score': ['不及格', '及格', '优秀']},
+    right=True,
+    include_lowest=True
+)
+print(res_right[['score', 'score_discretized']])
+print(disc_right.get_bin_info('score'))
+print()
+
+print("--- right=False（左闭右开 [a, b)）---")
+disc_left = DataDiscretizer()
+res_left = disc_left.fit_transform(
+    test_data,
+    columns=['score'],
+    method='custom',
+    custom_bins={'score': [0, 60, 80, 100]},
+    labels={'score': ['不及格', '及格', '优秀']},
+    right=False,
+    include_lowest=True
+)
+print(res_left[['score', 'score_discretized']])
+print(disc_left.get_bin_info('score'))
+print()
+
+print("关键差异：")
+print(f"  score=60 在 right=True  时归属: {res_right.loc[1, 'score_discretized']}（60 落入 (0,60] 右闭区间）")
+print(f"  score=60 在 right=False 时归属: {res_left.loc[1, 'score_discretized']}（60 落入 [60,80) 左闭区间）")
+print(f"  score=80 在 right=True  时归属: {res_right.loc[3, 'score_discretized']}（80 落入 (60,80] 右闭区间）")
+print(f"  score=80 在 right=False 时归属: {res_left.loc[3, 'score_discretized']}（80 落入 [80,100) 左闭区间）")

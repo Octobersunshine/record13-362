@@ -9,6 +9,8 @@ class DataDiscretizer:
         self.bins_ = {}
         self.labels_ = {}
         self.methods_ = {}
+        self.right_ = {}
+        self.include_lowest_ = {}
 
     def fit(
         self,
@@ -53,6 +55,8 @@ class DataDiscretizer:
             self.bins_[col] = bins
             self.labels_[col] = col_labels
             self.methods_[col] = method
+            self.right_[col] = right
+            self.include_lowest_[col] = include_lowest
         
         return self
 
@@ -66,42 +70,52 @@ class DataDiscretizer:
     ) -> pd.DataFrame:
         if not self.bins_:
             raise ValueError("Discretizer has not been fitted. Call fit() first.")
-        
+
         if handle_unknown not in ['clip', 'error', 'nan']:
             raise ValueError("handle_unknown must be 'clip', 'error', or 'nan'")
-        
+
         if columns is None:
             columns = list(self.bins_.keys())
-        
+
         if not inplace:
             data = data.copy()
-        
+
         for col in columns:
             if col not in self.bins_:
                 raise ValueError(f"Column '{col}' was not fitted. Call fit() with this column first.")
-            
+
             bins = self.bins_[col].copy()
             labels = self.labels_[col]
+            right = self.right_[col]
+            include_lowest = self.include_lowest_[col]
             col_data = data[col]
-            
+
+            if not right and include_lowest:
+                bins[-1] = np.nextafter(bins[-1], bins[-1] + 1)
+
             if handle_unknown == 'clip':
-                col_data = col_data.clip(bins[0], bins[-1])
+                col_data = col_data.clip(self.bins_[col][0], self.bins_[col][-1])
             elif handle_unknown == 'error':
-                out_of_range = (col_data < bins[0]) | (col_data > bins[-1])
+                lo = self.bins_[col][0]
+                hi = self.bins_[col][-1]
+                if right:
+                    out_of_range = (col_data < lo) | (col_data > hi)
+                else:
+                    out_of_range = (col_data < lo) | (col_data > hi)
                 if out_of_range.any():
                     raise ValueError(
                         f"Column '{col}' contains values outside fitted bin range "
-                        f"[{bins[0]}, {bins[-1]}]: {col_data[out_of_range].tolist()}"
+                        f"[{lo}, {hi}]: {col_data[out_of_range].tolist()}"
                     )
-            
+
             data[f"{col}{suffix}"] = pd.cut(
                 col_data,
                 bins=bins,
                 labels=labels,
-                include_lowest=True,
-                right=True
+                include_lowest=include_lowest,
+                right=right
             )
-        
+
         return data
 
     def fit_transform(
@@ -112,11 +126,13 @@ class DataDiscretizer:
         n_bins: int = 3,
         custom_bins: Optional[dict] = None,
         labels: Optional[dict] = None,
+        include_lowest: bool = True,
+        right: bool = True,
         inplace: bool = False,
         suffix: str = '_discretized',
         handle_unknown: str = 'clip'
     ) -> pd.DataFrame:
-        self.fit(data, columns, method, n_bins, custom_bins, labels)
+        self.fit(data, columns, method, n_bins, custom_bins, labels, include_lowest, right)
         return self.transform(data, columns, inplace, suffix, handle_unknown)
 
     def get_bin_info(self, column: Optional[str] = None) -> Union[dict, pd.DataFrame]:
@@ -134,23 +150,29 @@ class DataDiscretizer:
         bins = self.bins_[column]
         labels = self.labels_[column]
         method = self.methods_[column]
-        
+        right = self.right_[column]
+        include_lowest = self.include_lowest_[column]
+
         intervals = []
         for i in range(len(bins) - 1):
             left = bins[i]
-            right = bins[i + 1]
-            if i == 0:
-                interval = f"[{left}, {right}]"
+            right_val = bins[i + 1]
+            if right:
+                left_bracket = '[' if (i == 0 and include_lowest) else '('
+                right_bracket = ']'
             else:
-                interval = f"({left}, {right}]"
-            intervals.append(interval)
-        
+                left_bracket = '['
+                right_bracket = ']' if (i == len(bins) - 2 and include_lowest) else ')'
+            intervals.append(f"{left_bracket}{left}, {right_val}{right_bracket}")
+
         return pd.DataFrame({
             'label': labels,
             'interval': intervals,
             'bin_start': bins[:-1],
             'bin_end': bins[1:],
-            'method': method
+            'method': method,
+            'right': right,
+            'include_lowest': include_lowest
         })
 
     @staticmethod
